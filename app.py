@@ -7,18 +7,11 @@ import base64
 import io
 import hashlib
 
-# -------------------------------------------------------------------
-# 1. PAGE CONFIGURATION & CUSTOM CSS (Modern UI Styling)
-# -------------------------------------------------------------------
 st.set_page_config(page_title="CampusConnect", page_icon="🎓", layout="wide", initial_sidebar_state="expanded")
 
-# Inject custom CSS to mimic modern web apps (like ApexLearn Docs)
 st.markdown("""
     <style>
-    /* Main Background & Font */
     .stApp { background-color: #FAFAFC; }
-    
-    /* Card Styling */
     .custom-card {
         background-color: #FFFFFF;
         padding: 20px;
@@ -29,34 +22,22 @@ st.markdown("""
     }
     .custom-card h4 { color: #111827; margin-bottom: 10px; font-weight: 600; }
     .custom-card p { color: #4B5563; font-size: 14px; }
-    
-    /* Sidebar Styling */
     [data-testid="stSidebar"] { background-color: #FFFFFF; border-right: 1px solid #E5E7EB; }
-    
-    /* Search Bar Styling */
     .stTextInput input { border-radius: 8px; border: 1px solid #D1D5DB; }
-    
-    /* Button Styling */
-    .stButton>button {
-        border-radius: 8px;
-        font-weight: 500;
-        transition: all 0.2s;
-    }
+    .stButton>button { border-radius: 8px; font-weight: 500; transition: all 0.2s; }
     .stButton>button:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
     </style>
 """, unsafe_allow_html=True)
 
-DEPARTMENTS = ["General", "CIVIL", "MECH", "CSE", "IT", "ECE", "EEE", "MECHATRONICS", "CSBS", "AIML", "DS", "VLSA", "EEE(CS)", "ARCH"]
+CORE_DEPTS = ["CIVIL", "MECH", "CSE", "IT", "ECE", "EEE", "MECHATRONICS", "CSBS", "AIML", "DS", "VLSA", "EEE(CS)", "ARCH"]
+ALL_DEPTS = ["General"] + CORE_DEPTS
 
-# -------------------------------------------------------------------
-# 2. DATABASE LOGIC WITH AUTHENTICATION
-# -------------------------------------------------------------------
 def init_db():
     conn = sqlite3.connect('campusconnect.db')
     c = conn.cursor()
     c.execute('''CREATE TABLE IF NOT EXISTS users (
                     id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT UNIQUE, password TEXT, 
-                    role TEXT, department TEXT, year TEXT, interests TEXT)''')
+                    role TEXT, department TEXT, year TEXT, interests TEXT, is_approved INTEGER DEFAULT 1)''')
     c.execute('''CREATE TABLE IF NOT EXISTS resources (
                     id INTEGER PRIMARY KEY AUTOINCREMENT, filename TEXT, uploader TEXT, category TEXT, 
                     department TEXT, upload_date TEXT, content TEXT, summary TEXT, file_data BLOB, verified INTEGER DEFAULT 0)''')
@@ -83,25 +64,16 @@ def fetch_data(query, params=()):
 def hash_password(password):
     return hashlib.sha256(str.encode(password)).hexdigest()
 
-# -------------------------------------------------------------------
-# 3. SESSION STATE MANAGEMENT
-# -------------------------------------------------------------------
-if 'logged_in' not in st.session_state:
-    st.session_state.logged_in = False
-if 'username' not in st.session_state:
-    st.session_state.username = ""
-if 'role' not in st.session_state:
-    st.session_state.role = ""
-if 'dept' not in st.session_state:
-    st.session_state.dept = ""
-if 'current_page' not in st.session_state:
-    st.session_state.current_page = "🏠 Dashboard"
+if 'logged_in' not in st.session_state: st.session_state.logged_in = False
+if 'username' not in st.session_state: st.session_state.username = ""
+if 'role' not in st.session_state: st.session_state.role = ""
+if 'dept' not in st.session_state: st.session_state.dept = ""
+if 'year' not in st.session_state: st.session_state.year = ""
+if 'interests' not in st.session_state: st.session_state.interests = ""
+if 'current_page' not in st.session_state: st.session_state.current_page = "🏠 Dashboard"
 
 init_db()
 
-# -------------------------------------------------------------------
-# 4. UTILITY FUNCTIONS
-# -------------------------------------------------------------------
 def extract_text(file_bytes):
     try:
         reader = PyPDF2.PdfReader(io.BytesIO(file_bytes))
@@ -140,9 +112,6 @@ def display_resource_card(row, unique_key):
             pdf_display = f'<iframe src="data:application/pdf;base64,{base64_pdf}" width="100%" height="600" type="application/pdf"></iframe>'
             st.markdown(pdf_display, unsafe_allow_html=True)
 
-# -------------------------------------------------------------------
-# 5. LOGIN & REGISTRATION SYSTEM
-# -------------------------------------------------------------------
 if not st.session_state.logged_in:
     st.markdown("<h1 style='text-align: center; margin-top: 50px;'>🎓 CampusConnect</h1>", unsafe_allow_html=True)
     st.markdown("<p style='text-align: center; color: #4B5563;'>The AI-powered knowledge sharing platform.</p>", unsafe_allow_html=True)
@@ -158,41 +127,71 @@ if not st.session_state.logged_in:
                 if st.form_submit_button("Log In", use_container_width=True):
                     user_df = fetch_data("SELECT * FROM users WHERE username = ? AND password = ?", (log_user, hash_password(log_pass)))
                     if not user_df.empty:
-                        st.session_state.logged_in = True
-                        st.session_state.username = user_df.iloc[0]['username']
-                        st.session_state.role = user_df.iloc[0]['role']
-                        st.session_state.dept = user_df.iloc[0]['department']
-                        st.rerun()
+                        # Check admin approval status
+                        if user_df.iloc[0]['is_approved'] == 0:
+                            st.error("Your Admin account is currently pending approval from an existing Admin.")
+                        else:
+                            st.session_state.logged_in = True
+                            st.session_state.username = user_df.iloc[0]['username']
+                            st.session_state.role = user_df.iloc[0]['role']
+                            st.session_state.dept = user_df.iloc[0]['department']
+                            st.session_state.year = user_df.iloc[0]['year']
+                            st.session_state.interests = user_df.iloc[0]['interests']
+                            st.rerun()
                     else:
                         st.error("Invalid username or password.")
                         
         with tab_register:
-            with st.form("register_form"):
-                reg_user = st.text_input("Choose Username")
-                reg_pass = st.text_input("Choose Password", type="password")
-                reg_role = st.selectbox("Role", ["Student", "Senior Student", "Faculty", "Admin"])
-                reg_dept = st.selectbox("Department", DEPARTMENTS)
-                reg_year = st.selectbox("Year", ["1st Year", "2nd Year", "3rd Year", "4th Year"])
-                reg_inter = st.text_input("Core Interests (e.g., Robotics, Placements)")
+            # Removed st.form here to allow dynamic UI rendering (Year changing based on Role)
+            reg_user = st.text_input("Choose Username")
+            reg_pass = st.text_input("Choose Password", type="password")
+            reg_role = st.selectbox("Role", ["Student", "Senior Student", "Faculty", "Admin"])
+            reg_dept = st.selectbox("Department", CORE_DEPTS)
+            
+            # Dynamic Year Selection
+            reg_year = "N/A"
+            if reg_role == "Student":
+                reg_year = st.selectbox("Year", ["1st Year", "2nd Year"])
+            elif reg_role == "Senior Student":
+                reg_year = st.selectbox("Year", ["3rd Year", "4th Year"])
                 
-                if st.form_submit_button("Sign Up", use_container_width=True):
+            reg_inter = st.text_input("Core Interests (e.g., Robotics, Placements)")
+            
+            if st.button("Sign Up", use_container_width=True):
+                if reg_user and reg_pass:
                     if fetch_data("SELECT * FROM users WHERE username = ?", (reg_user,)).empty:
-                        execute_query("INSERT INTO users (username, password, role, department, year, interests) VALUES (?, ?, ?, ?, ?, ?)", 
-                                      (reg_user, hash_password(reg_pass), reg_role, reg_dept, reg_year, reg_inter))
-                        st.success("Account created! Please switch to the Sign In tab.")
+                        
+                        # First-Admin Verification Logic
+                        is_approved = 1
+                        if reg_role == "Admin":
+                            # Check if ANY approved admin already exists
+                            admin_count = fetch_data("SELECT COUNT(*) FROM users WHERE role = 'Admin' AND is_approved = 1").iloc[0,0]
+                            if admin_count > 0:
+                                is_approved = 0 # Requires approval from the first admin
+                        
+                        execute_query("INSERT INTO users (username, password, role, department, year, interests, is_approved) VALUES (?, ?, ?, ?, ?, ?, ?)", 
+                                      (reg_user, hash_password(reg_pass), reg_role, reg_dept, reg_year, reg_inter, is_approved))
+                        
+                        if is_approved == 1:
+                            st.success("Account created! Please switch to the Sign In tab.")
+                        else:
+                            st.warning("Account created! Since you requested Admin rights, you must wait for an existing Admin to approve you.")
                     else:
                         st.error("Username already exists.")
+                else:
+                    st.error("Please fill out username and password.")
 
-# -------------------------------------------------------------------
-# 6. MAIN APPLICATION SPA
-# -------------------------------------------------------------------
 else:
     # --- DYNAMIC SIDEBAR NAVIGATION ---
     with st.sidebar:
         st.markdown(f"### 📘 CampusConnect")
-        st.caption(f"Logged in as **{st.session_state.username}** ({st.session_state.role})")
+        st.caption(f"Logged in as **{st.session_state.username}**")
+        st.write(f"**Role:** {st.session_state.role}")
+        st.write(f"**Dept:** {st.session_state.dept}")
+        if st.session_state.role in ["Student", "Senior Student"]:
+            st.write(f"**Year:** {st.session_state.year}")
+            
         st.divider()
-        
         st.markdown("**GETTING STARTED**")
         if st.button("🏠 Dashboard", use_container_width=True, type="primary" if st.session_state.current_page == "🏠 Dashboard" else "secondary"):
             st.session_state.current_page = "🏠 Dashboard"
@@ -230,7 +229,6 @@ else:
         st.title("Dashboard Overview")
         st.write("Welcome to CampusConnect! This guide will help you understand the basics and get started with the platform.")
         
-        # Display modern cards mimicking the reference image
         c1, c2, c3 = st.columns(3)
         with c1:
             st.markdown("""
@@ -266,7 +264,8 @@ else:
         st.title("Academic Resource Library")
         col1, col2 = st.columns([1, 2])
         with col1:
-            filter_dept = st.selectbox("Filter by Department", ["All"] + DEPARTMENTS)
+            # Allows searching in General + Core Depts
+            filter_dept = st.selectbox("Filter by Department", ["All"] + ALL_DEPTS)
         with col2:
             lib_search = st.text_input("Search library by filename...")
             
@@ -355,20 +354,23 @@ else:
 
     elif st.session_state.current_page == "🤖 Ask CampusConnect":
         st.title("Ask CampusConnect")
-        st.info("Ask questions and get AI answers directly from the college knowledge base.")
+        st.info("Ask questions and get AI answers directly from the college knowledge base (Verified PDFs only).")
         ai_query = st.text_input("What do you want to know?")
         if ai_query:
-            all_res = fetch_data("SELECT content FROM resources")
-            if any(any(w in str(row['content']).lower() for w in ai_query.lower().split()) for _, row in all_res.iterrows()):
-                st.success(f"**CampusConnect AI:** Based on the resources uploaded by students, here is what I found regarding '{ai_query}'. (Simulated Response)")
+            # Queries ONLY verified resources as per DT Slide 10
+            all_res = fetch_data("SELECT content FROM resources WHERE verified = 1")
+            if not all_res.empty and any(any(w in str(row['content']).lower() for w in ai_query.lower().split()) for _, row in all_res.iterrows()):
+                st.success(f"**CampusConnect AI:** Based on the verified resources uploaded by students, here is what I found regarding '{ai_query}'. (Simulated Response)")
             else:
-                st.warning("**CampusConnect AI:** I couldn't find specific information about that in the database.")
+                st.warning("**CampusConnect AI:** I couldn't find specific information about that in the verified database.")
 
     elif st.session_state.current_page == "☁️ Upload Hub":
         st.title("Upload & Process Resources")
         with st.form("upload_form", clear_on_submit=True):
             uploaded_file = st.file_uploader("Upload PDF Document", type=['pdf'])
-            target_dept = st.selectbox("Target Department", DEPARTMENTS)
+            st.caption("⚙️ Powered by PyPDF2 Extraction Engine")
+            # Includes General as an option for uploading
+            target_dept = st.selectbox("Target Department", ALL_DEPTS)
             if st.form_submit_button("Process & Upload"):
                 if uploaded_file:
                     with st.spinner("Extracting & Summarizing..."):
@@ -394,6 +396,25 @@ else:
         c1.metric("Resources Uploaded", uploads_count)
         c2.metric("Q&A Interactions", qa_count)
         c3.metric("Guides Shared", exp_count)
+        
+        # Admin Specific Controls
+        if st.session_state.role == "Admin":
+            st.divider()
+            st.subheader("🛠️ Admin Controls - Pending Approvals")
+            st.write("Review users who have requested Admin access.")
+            
+            pending_admins = fetch_data("SELECT id, username, department FROM users WHERE role = 'Admin' AND is_approved = 0")
+            if not pending_admins.empty:
+                for _, row in pending_admins.iterrows():
+                    colA, colB = st.columns([4, 1])
+                    with colA:
+                        st.info(f"**Username:** {row['username']} | **Dept:** {row['department']}")
+                    with colB:
+                        if st.button("Approve", key=f"approve_{row['id']}", use_container_width=True):
+                            execute_query("UPDATE users SET is_approved = 1 WHERE id = ?", (row['id'],))
+                            st.rerun()
+            else:
+                st.success("No pending admin requests at this time.")
         
         st.divider()
         st.subheader("Your Recent Uploads")
