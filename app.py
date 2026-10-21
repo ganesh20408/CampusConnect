@@ -7,7 +7,7 @@ import base64
 import io
 import hashlib
 
-st.set_page_config(page_title="CampusConnect", page_icon="🎓", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="AURA", page_icon="🎓", layout="wide", initial_sidebar_state="expanded")
 
 st.markdown("""
     <style>
